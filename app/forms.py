@@ -92,3 +92,10 @@ class SingleNumberForm(Form):
 class SinglePriceForm(Form):
     price = forms.IntegerField(label='Price', initial=0)
 
+class BuyBackSelectForm(ModelForm):
+    class Meta:
+        model = BuyBackBike
+        include = ['vin', ]
+        widgets = {
+            'vin': forms.Select()
+        }
