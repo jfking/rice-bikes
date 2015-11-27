@@ -1,4 +1,18 @@
+# Python compiled files
+*.py[co]
+__pycache__/
+
+# Pycharm IDE stuff
+.idea/
+
+# Django private stuff
+*/settings.py
+db.sqlite3
+
+# Virtualenv files
+env/
+py3env/
 venv/
-db*
-mysite/
-*.pyc
+
+# Ignore my personal notes
+notes/
