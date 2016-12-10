@@ -1,7 +1,7 @@
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render, get_object_or_404, render_to_response, redirect
 from app.models import Transaction, Task, Part, Accessory, RentalBike, RefurbishedBike, \
-    RevenueUpdate, TotalRevenue, PartCategory, PartOrder, TaskMenuItem, MiscRevenueUpdate, \
+    RevenueUpdate, TotalRevenue, TaskMenuItem, MiscRevenueUpdate, \
     AccessoryMenuItem, PartMenuItem, BuyBackBike
 from django.views.generic.edit import UpdateView, CreateView
 from django.db.models import Q
@@ -13,8 +13,8 @@ from django.contrib.auth import get_user_model
 from django.utils.decorators import method_decorator
 from formtools.wizard.views import SessionWizardView
 from django.contrib.auth import authenticate, login, logout
-from app.forms import RentalForm, RefurbishedForm, RevenueForm, TaskForm, PartCategoryForm, \
-    PartOrderForm, CustomerForm, DisabledPartCategoryForm, MiscRevenueUpdateForm, SingleNumberForm, \
+from app.forms import RentalForm, RefurbishedForm, RevenueForm, TaskForm, \
+    CustomerForm, MiscRevenueUpdateForm, SingleNumberForm, \
     BuyBackForm, SinglePriceForm
 from django.template import RequestContext
 from django.forms.formsets import formset_factory
@@ -166,7 +166,7 @@ def detail(request, **kwargs):
     print parts
     print "END"
 
-    return render_to_response("app/" + detail_page, {
+    return render(request, "app/" + detail_page, {
         'transaction': transaction,
         'parent_url': parent_url,
         'tasks': tasks,
@@ -205,6 +205,7 @@ def process_transaction_edit(form_data, transaction, request):
         transaction.bike_description = form_data['bike_description']
         transaction.amount_paid = form_data['amount_paid']
         transaction.cost = form_data['cost']
+        transaction.email = form_data['email']
         transaction.save()
 
 
@@ -230,45 +231,6 @@ def process_misc_trans_update(form_data, misc_update, request):
             new_total_revenue=total_revenue.total_revenue,
         )
         revenue_update.save()
-
-
-def process_part_category_forms(form_input_data, transaction):
-    """ Processes form data for multiple PartCategoryForms, putting the
-    resulting list of dictionaries into form_list."""
-
-    # build the forms by iterating over the MultiValueDict
-    fields = PartCategory._meta.get_all_field_names()
-    non_saved_fields = ['id', 'date_submitted', 'transaction', 'transaction_id']
-    fields = [el for el in fields if el not in non_saved_fields]
-
-    s = 'category'
-    print form_input_data
-    num_forms = len(form_input_data.getlist(s))
-    print num_forms
-
-    print 'fields = ' + str(fields)
-
-    # delete old PartCategories
-    transaction.partcategory_set.all().delete()
-
-    # save new PartCategories
-    for i in xrange(num_forms):
-        new_part_category = PartCategory()
-        print "NEW PART CATEGORY: "
-
-        for field in fields:
-            value = form_input_data.getlist(field)[i]
-            if field == "was_used" and value == "False":
-                value = False
-            if field == "price" and value == "":
-                value = 0
-            setattr(new_part_category, field, value)
-            print "field = " + str(field)
-            print "value = " + str(getattr(new_part_category, field))
-        print "END"
-
-        new_part_category.transaction = transaction
-        new_part_category.save()
 
 
 def get_tasks_by_category():
@@ -397,9 +359,6 @@ def update(request, **kwargs):
     part_categories = [tup[0] for tup in part_category_tuples]
 
     transaction_form = TaskForm(instance=transaction)
-
-    # new form
-    new_category_form = PartCategoryForm()
 
     part_status_choices = Part._meta.get_field('status').choices
 
@@ -567,65 +526,6 @@ def new_refurbished(request):
     return render(request, 'app/new_refurbished.html', {
         'form': form,
     })
-
-
-def process(form_data):
-    print "PROCESSING create-transaction forms"
-    print form_data
-    new_transaction = Transaction(
-        first_name=form_data[0]['first_name'],
-        last_name=form_data[0]['last_name'],
-        email=form_data[0]['email'],
-        affiliation=form_data[0]['affiliation'],
-        cost=form_data[0]['cost'],
-        bike_description=form_data[0]['bike_description'],
-    )
-
-    # map transaction to rental/refurbished bike
-    rental_vin = form_data[0]['rental_vin']
-    refurbished_vin = form_data[0]['refurbished_vin']
-    if rental_vin:
-        rental_bike = RentalBike.objects.filter(vin=rental_vin).first()
-        if rental_bike is None:
-            rental_bike = RentalBike(
-                vin=rental_vin,
-            )
-            rental_bike.save()
-        new_transaction.rental_bike = rental_bike
-    elif refurbished_vin:
-        refurbished_bike = RefurbishedBike.objects.filter(vin=refurbished_vin).first()
-        if refurbished_bike is None:
-            refurbished_bike = RefurbishedBike(
-                vin=refurbished_vin,
-            )
-            refurbished_bike.save()
-        new_transaction.refurbished_bike = refurbished_bike
-
-    new_transaction.save()
-
-    # map tasks to this transaction
-    for menu_item in form_data[1]:
-        task = Task(
-            completed=False,
-            transaction=new_transaction,
-            menu_item=menu_item,
-        )
-        task.save()
-
-    # map parts to this transaction
-    for form in form_data[2]:
-        if (form['was_used'] == 'True'):
-            was_used = True
-        else:
-            was_used = False
-        part_category = PartCategory(
-            category=form['category'],
-            price=form['price'],
-            description=form['description'],
-            was_used=was_used,
-            transaction=new_transaction,
-        )
-        part_category.save()
 
 
 def process_transaction(form_data):
@@ -1130,10 +1030,19 @@ def assign_items(request, **kwargs):
     })
 
 def delete_transaction(request, **kwargs):
+
     transaction = Transaction.objects.filter(id=kwargs['trans_pk']).first()
     Transaction.delete(transaction)
 
-    return HttpResponseRedirect("/" + kwargs['parent_url'])
+    # Why doesn't reverse work??
+    # return HttpResponseRedirect(reverse(kwargs['parent_url']))
+
+    url = "/" + kwargs['parent_url']
+    if url == "/index":
+        url = "/"
+
+    return HttpResponseRedirect(url)
+
 
 def user_login(request):
     context = RequestContext(request)
@@ -1180,8 +1089,6 @@ def make_revenue_export_file(table_rows, filename):
         update_list = []
         if update.transaction:
             update_list.append("T-" + str(update.transaction.id))
-        elif update.order:
-            update_list.append("P-" + str(update.order.id))
         elif update.misc_revenue_update:
             update_list.append("M-" + str(update.misc_revenue_update.id))
         else:
@@ -1219,36 +1126,6 @@ def make_order_export_file(table_rows, filename):
         order_list.append(order.price)
         order_list.append(order.date_submitted.date())
         writer.writerow(order_list)
-    return response
-
-
-def make_used_parts_export_file(table_rows, filename):
-    response = HttpResponse(content_type='text/csv')
-    response['Content-Disposition'] = 'attachment; filename="%s"' % filename
-
-    # Transaction ID, Category, Price, Installed, Date
-
-    choices = PartCategory._meta.get_field('category').choices
-
-    writer = csv.writer(response)
-
-    writer.writerow(["Transaction ID", "Category", "Price", "Installed", "Date"])
-
-    for part in table_rows:
-        parts_list = list()
-        if part.transaction:
-            parts_list.append(part.transaction.id)
-        else:
-            parts_list.append(None)
-        if part.category:
-            parts_list.append(part.get_category_display())
-        else:
-            parts_list.append(None)
-        parts_list.append(part.price)
-        parts_list.append(part.was_used)
-        parts_list.append(part.date_submitted.date())
-
-        writer.writerow(parts_list)
     return response
 
 
@@ -1297,39 +1174,12 @@ def revenue_update(request):
 
 @login_required
 def orders(request):
-    orders = Part.objects.filter(~Q(status="Available")).order_by('date_submitted').reverse()
+    orders = Part.objects.filter(~Q(status="Available")).order_by('transaction__date_submitted').reverse()
 
     if request.method == 'POST':
         if 'export_orders' in request.POST:
             return make_order_export_file(orders, 'order_history.csv')
     return render(request, 'app/orders.html', {'orders': orders})
-
-
-def make_revenue_update(request, order, amount):
-    if amount != 0:
-        # make revenue update
-        if TotalRevenue.objects.count() == 0:
-            total_revenue = TotalRevenue(
-                total_revenue=0
-            )
-            total_revenue.save()
-        total_revenue = TotalRevenue.objects.first()
-        total_revenue.total_revenue += amount
-        total_revenue.save()
-
-        revenue_update = RevenueUpdate.objects.filter(order=order).first()
-
-        if revenue_update is None:
-            revenue_update = RevenueUpdate(
-                amount=amount,
-                employee=request.user.get_username(),
-                transaction=None,
-                order=order,
-                new_total_revenue=total_revenue.total_revenue,
-            )
-        else:
-            revenue_update.amount = amount
-        revenue_update.save()
 
 
 def send_order_email(request, form_data):
@@ -1347,86 +1197,6 @@ def send_order_email(request, form_data):
 
     except ValueError:
         pass
-
-
-def process_order_edit(request, order, form_data):
-
-    if form_data['was_ordered']:
-        make_revenue_update(request, order, form_data['price'])
-
-    order.name = form_data['name']
-    order.category = form_data['category']
-    order.was_ordered = form_data['was_ordered']
-    order.price = form_data['price']
-    order.description = form_data['description']
-
-    order.save()
-
-
-@login_required
-def make_order(request):
-    absolute_url = "/"
-    if request.method == 'POST':
-        if "cancel" in request.POST:
-            return HttpResponseRedirect(absolute_url)
-        form = PartOrderForm(request.POST)
-        if form.is_valid():
-            send_order_email(request, form.cleaned_data)
-            return render_to_response('app/confirm.html', {'absolute_url': absolute_url,
-                                                           'text': "You successfully created an order request!"})
-
-    else:
-        form = PartOrderForm()
-
-    return render(request, 'app/make_order.html', {'form': form})
-
-
-@login_required
-def edit_order(request, **kwargs):
-    absolute_url = "/" + kwargs['parent_url']
-    print "GOT TO EDIT ORDER PAGE FROM: " + str(absolute_url)
-    order = PartOrder.objects.filter(id=kwargs['order_id']).first()
-    if request.method == 'POST':
-        if "cancel" in request.POST:
-            return HttpResponseRedirect(absolute_url)
-        form = PartOrderForm(request.POST)
-        if form.is_valid():
-            print "BRO. Order = " + str(order)
-            process_order_edit(request, order, form.cleaned_data)
-            return render_to_response('app/confirm.html', {'absolute_url': absolute_url,
-                                                           'text': "You successfully edited the order request!"})
-
-    else:
-        form = PartOrderForm(instance=order)
-
-    return render(request, 'app/make_order.html', {'form': form})
-
-
-def delete_order(request, **kwargs):
-    order_id = kwargs["order_id"]
-    order = PartOrder.objects.filter(id=order_id).first()
-
-    order_rev_updates = order.revenueupdate_set.all()
-    print "ORDER REV UPDATES = "
-    print str(order_rev_updates)
-    for rev_update in order_rev_updates:
-        rev_update.order = None
-        rev_update.save()
-
-    PartOrder.objects.filter(id=order_id).first().delete()
-    return HttpResponseRedirect('/orders')
-
-
-@login_required
-def used_parts(request):
-    used_parts = PartCategory.objects.all().order_by('date_submitted').reverse()
-
-    if request.method == 'POST':
-        print request.POST
-        if 'export_used' in request.POST:
-            return make_used_parts_export_file(used_parts, 'used_parts_history.csv')
-
-    return render(request, 'app/used_parts.html', {'used_parts': used_parts})
 
 
 def about(request):
@@ -1519,7 +1289,7 @@ def make_sold_items_export_file(request, filename):
     response['Content-Disposition'] = 'attachment; filename="%s"' % filename
 
     writer = csv.writer(response)
-    writer.writerow(["Item", "Category", "Amount", "Price", "Total", "Employee", "Customer", "Date"])
+    writer.writerow(["Item", "Category", "Subcategory", "Number", "Price", "Total", "Employee", "Customer", "Date"])
 
     tasks_sold = Task.objects.filter(sold=True).order_by('-transaction__date_submitted')
     parts_sold = Part.objects.filter(sold=True).order_by('-transaction__date_submitted')
@@ -1527,18 +1297,31 @@ def make_sold_items_export_file(request, filename):
     buy_backs_sold = \
         Transaction.objects.exclude(buy_back_bike=None).filter(completed=True).order_by('-date_submitted')
 
-    items_sold = [tasks_sold, parts_sold, accessories_sold]
+    category_items_sold = [tasks_sold, parts_sold]
     # Flatten the list
-    items_sold = [val for inner_list in items_sold for val in inner_list]
+    category_items_sold = [val for inner_list in category_items_sold for val in inner_list]
 
-    for item in items_sold:
+    for item in category_items_sold:
         sold_items_row = [item.menu_item.name,
                           type(item).__name__,
+                          item.menu_item.category,
                           item.number,
                           item.price,
                           item.number * item.price,
                           request.user.get_username(),
-                          item.transaction.first_name + " " + item.transaction.last_name,
+                          item.transaction,
+                          item.transaction.date_submitted.date()]
+        writer.writerow(sold_items_row)
+
+    for item in accessories_sold:
+        sold_items_row = [item.menu_item.name,
+                          type(item).__name__,
+                          None,
+                          item.number,
+                          item.price,
+                          item.number * item.price,
+                          request.user.get_username(),
+                          item.transaction,
                           item.transaction.date_submitted.date()]
         writer.writerow(sold_items_row)
 
@@ -1546,6 +1329,7 @@ def make_sold_items_export_file(request, filename):
     for transaction in buy_backs_sold:
         buy_backs = ["Vin: " + str(transaction.buy_back_bike.vin),
                      "Buy-Back Bike",
+                     None,
                      1, # BuyBackBike does not have the number field as other items do
                      transaction.buy_back_bike.price,
                      transaction.buy_back_bike.price,

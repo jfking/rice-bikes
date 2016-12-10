@@ -6,16 +6,17 @@
 <form class="form-inline" method="post">
     {% csrf_token %}
     <div class="btn-group btn-group-justified" role="group" aria-label="...">
-        <a class="btn btn-default" href="{% url 'app:make_order' %}"  role="button" name='new_payment'>
-                <img class="button-pic" src="/app/static/img/add.png" alt="New transaction"/>
+        <a class="btn btn-default" href="#"  role="button" name='new_payment'>
+            <img class="button-pic" src="/app/static/img/add.png" alt="New transaction"/>
         </a>
-        <a class="btn btn-default" href="{% url 'app:used_parts' %}" role="button" style="font-size:18">Used</a>
-        <div class="btn-group" role="group">
-                <button type="submit" name="export_orders" class="btn btn-default btn-lg">Export</button>
-        </div>
-    </div>
-    <br>
 
+        <!--<div class="btn-group" role="group">-->
+            <!--<button type="submit" name="export_orders" class="btn btn-default btn-lg">Export</button>-->
+        <!--</div>-->
+        <a class="btn btn-default" href="#"  role="button" name='new_payment' style="font-size:18">
+            Export
+        </a>
+    </div>
 </form>
 
 {% if orders %}
@@ -24,8 +25,9 @@
     <!--was_ordered is shown by red/green for true/false-->
     <table class="table">
         <thead>
-            <td></td>
+            <td>Part</td>
             <td>Status</td>
+            <td>Date</td>
         </thead>
 
         {% for order in orders %}
@@ -33,6 +35,7 @@
 
                 <td><a href="{% url 'app:detail_1' 'orders' order.transaction.id %}">{{order}}</a></td>
                 <td>{{order.status}}</td>
+                <td>{{order.transaction.date_submitted|date:"n/j"}}</td>
             </tr>
         {% endfor %}
 
